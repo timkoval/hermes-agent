@@ -1249,7 +1249,7 @@ def _exec_in_container(container_info: dict, cli_args: list):
     tty_flags = ["-it"] if is_tty else ["-i"]
 
     env_flags = []
-    for var in ("TERM", "COLORTERM", "LANG", "LC_ALL"):
+    for var in ("TERM", "COLORTERM", "LANG", "LC_ALL", "HERMES_HOME"):
         val = os.environ.get(var)
         if val:
             env_flags.extend(["-e", f"{var}={val}"])

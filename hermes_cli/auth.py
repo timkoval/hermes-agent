@@ -43,7 +43,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from hermes_cli.config import get_hermes_home, get_config_path, read_raw_config
+from hermes_cli.config import get_hermes_home, get_config_path, read_raw_config, is_managed
 from hermes_constants import OPENROUTER_BASE_URL, secure_parent_dir
 from agent.credential_persistence import sanitize_borrowed_credential_payload
 from utils import atomic_replace, atomic_yaml_write, env_float, is_truthy_value
@@ -1111,7 +1111,10 @@ def _save_auth_store(auth_store: Dict[str, Any], target_path: Optional[Path] = N
     # Tighten parent dir to 0o700 so siblings can't traverse to creds.
     # No-op on Windows (POSIX mode bits not enforced); ignore failures.
     # secure_parent_dir refuses to chmod / or top-level dirs (#25821).
-    secure_parent_dir(auth_file)
+    # In NixOS managed mode the module intentionally keeps the directory
+    # group-accessible, so skip the lockdown there.
+    if not is_managed():
+        secure_parent_dir(auth_file)
     auth_store["version"] = AUTH_STORE_VERSION
     auth_store["updated_at"] = datetime.now(timezone.utc).isoformat()
     payload = json.dumps(auth_store, indent=2) + "\n"
