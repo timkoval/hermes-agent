@@ -775,6 +775,7 @@
     container_name=${containerName}
     exec_user=${cfg.user}
     hermes_bin=${containerDataDir}/current-package/bin/hermes
+    hermes_home=${containerDataDir}/.hermes
     HERMES_CONTAINER_MODE_EOF
             chown ${cfg.user}:${cfg.group} ${cfg.stateDir}/.hermes/.container-mode
             chmod 0644 ${cfg.stateDir}/.hermes/.container-mode

@@ -1248,9 +1248,30 @@ def _exec_in_container(container_info: dict, cli_args: list):
     is_tty = sys.stdin.isatty()
     tty_flags = ["-it"] if is_tty else ["-i"]
 
+    # Translate HERMES_HOME to the container's namespace. On the host it may
+    # point to a symlinked path (e.g. /home/tkoval/.hermes -> /var/lib/hermes/.hermes),
+    # while inside the container the state volume is mounted elsewhere
+    # (e.g. /data/.hermes). Passing the host path verbatim makes the container
+    # hermes complain the directory does not exist.
+    hermes_home_env = os.environ.get("HERMES_HOME", "")
+    container_home = container_info.get("hermes_home", "")
+    if hermes_home_env and container_home:
+        from hermes_constants import get_default_hermes_root
+
+        host_roots = {str(get_default_hermes_root())}
+        try:
+            # Resolve the .container-mode symlink to find the real host root.
+            host_roots.add(str((get_hermes_home() / ".container-mode").resolve().parent))
+        except OSError:
+            pass
+        for host_root in host_roots:
+            if hermes_home_env.startswith(host_root):
+                hermes_home_env = container_home + hermes_home_env[len(host_root):]
+                break
+
     env_flags = []
     for var in ("TERM", "COLORTERM", "LANG", "LC_ALL", "HERMES_HOME"):
-        val = os.environ.get(var)
+        val = hermes_home_env if var == "HERMES_HOME" else os.environ.get(var)
         if val:
             env_flags.extend(["-e", f"{var}={val}"])
 
