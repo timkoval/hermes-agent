@@ -896,12 +896,30 @@ def is_container() -> bool:
     # cgroup v2: /proc/1/cgroup is just "0::/" with no marker. The container
     # runtime still shows up in the mount table (overlay rootfs, runtime mount
     # paths), so scan mountinfo as a last resort.
+    # Only consider the *root* mount: a host running Docker/Podman will have
+    # many container overlay mounts visible, but its own root is a normal
+    # filesystem (ext4/btrfs/...). A container's root is typically overlay.
     try:
         with open("/proc/self/mountinfo", "r", encoding="utf-8") as f:
-            mountinfo = f.read()
-            if any(marker in mountinfo for marker in ("kubepods", "containerd", "crio")):
-                _container_detected = True
-                return True
+            for line in f:
+                # mountinfo format: ... /path/to/root / ... - fstype source ...
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                # Find the separator "-" and the mount point.
+                if "-" not in parts:
+                    continue
+                sep_idx = parts.index("-")
+                if sep_idx < 4:
+                    continue
+                mount_point = parts[4]
+                if mount_point != "/":
+                    continue
+                fstype = parts[sep_idx + 1] if sep_idx + 1 < len(parts) else ""
+                if fstype == "overlay":
+                    _container_detected = True
+                    return True
+                break
     except OSError:
         pass
     _container_detected = False
