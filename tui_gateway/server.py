@@ -8983,6 +8983,10 @@ def _project_tree_row(r: dict) -> dict:
     return {
         "id": r.get("id"),
         "_lineage_root_id": r.get("_lineage_root_id"),
+        # The sidebar nests branch/fork sessions under their parent
+        # (flattenSessionsWithBranches keys on this); without it, lane rows can't
+        # draw the └─ connector the flat Recents list shows.
+        "parent_session_id": r.get("parent_session_id"),
         "title": r.get("title"),
         "preview": r.get("preview"),
         "started_at": r.get("started_at") or 0,
