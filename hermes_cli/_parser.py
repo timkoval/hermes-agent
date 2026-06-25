@@ -285,6 +285,18 @@ def build_top_level_parser():
         help="Inference provider (default: auto). Built-in or a user-defined name from `providers:` in config.yaml.",
     )
     chat_parser.add_argument(
+        "--context",
+        default=argparse.SUPPRESS,
+        help="Context mode (default: 'default'). Named config in config.yaml `contexts:`. "
+             "Each context bundles credential_pool, model, git identity, and toolset preset.",
+    )
+    chat_parser.add_argument(
+        "--preset",
+        default=argparse.SUPPRESS,
+        help="Toolset preset (default: context's preset). Named bundle in config.yaml `toolset_presets:`. "
+             "Options: full, coding, research, lean, emergency, or any custom name.",
+    )
+    chat_parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",

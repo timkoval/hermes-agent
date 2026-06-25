@@ -473,6 +473,13 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         timestamp_line += f"\nModel: {agent.model}"
     if agent.provider:
         timestamp_line += f"\nProvider: {agent.provider}"
+    # Active context and preset — injected after model/provider info
+    context_name = getattr(agent, "_active_context", None)
+    if context_name and context_name != "default":
+        timestamp_line += f"\nActive context: {context_name}"
+    preset_name = getattr(agent, "_active_preset", None)
+    if preset_name:
+        timestamp_line += f"\nPreset: {preset_name}"
     volatile_parts.append(timestamp_line)
 
     return {

@@ -2425,6 +2425,14 @@ def cmd_chat(args):
         "ignore_user_config": getattr(args, "ignore_user_config", False) or getattr(args, "safe_mode", False),
         "compact": getattr(args, "compact", False),
     }
+    # Thread context and preset through the CLI as env vars so agent_init
+    # can read them without threading through every dispatch layer.
+    ctx_val = getattr(args, "context", None)
+    if ctx_val:
+        os.environ["HERMES_CONTEXT"] = ctx_val
+    preset_val = getattr(args, "preset", None)
+    if preset_val:
+        os.environ["HERMES_PRESET"] = preset_val
     # Filter out None values
     kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
