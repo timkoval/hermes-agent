@@ -1369,6 +1369,9 @@ DEFAULT_CONFIG = {
                                       # exact route is affected — gpt-5.5 on OpenAI's
                                       # direct API, OpenRouter, and Copilot keep the
                                       # global threshold regardless.
+        "show_context_usage": True,        # Show context usage meter in system prompt
+                                            # volatile tier when above warning threshold
+        "usage_warning_threshold": 0.50,   # Show meter when context usage exceeds this ratio
         "in_place": True,             # When True, compaction rewrites the message
                                       # list and rebuilds the system prompt WITHOUT
                                       # rotating the session id — the conversation
@@ -2167,6 +2170,10 @@ DEFAULT_CONFIG = {
         # Flip to true only if you trust delegated work to run dangerous cmds
         # without human review (cron pipelines, batch automation, etc.).
         "subagent_auto_approve": False,
+        # When notify_on_complete is True on a delegate_task call, the subagent
+        # result is pushed as a gateway notification if the user appears idle.
+        # Default 300 (5 min) — only send notification if no user message in this long.
+        "notify_idle_threshold_seconds": 300,
     },
 
     # Ephemeral prefill messages file — JSON list of {role, content} dicts

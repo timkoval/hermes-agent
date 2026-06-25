@@ -482,6 +482,15 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         timestamp_line += f"\nPreset: {preset_name}"
     volatile_parts.append(timestamp_line)
 
+    # Context usage meter — compact status line when near compression
+    try:
+        from agent.context_meter import build_context_usage_line
+        ctx_line = build_context_usage_line(agent)
+        if ctx_line:
+            volatile_parts.append(ctx_line)
+    except Exception:
+        pass
+
     return {
         "stable":   "\n\n".join(p.strip() for p in stable_parts   if p and p.strip()),
         "context":  "\n\n".join(p.strip() for p in context_parts  if p and p.strip()),
