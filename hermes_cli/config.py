@@ -1084,8 +1084,10 @@ DEFAULT_CONFIG = {
         #   "text"   — always pre-analyze with vision_analyze and prepend the
         #              description as text; the main model never sees pixels.
         # Affects gateway platforms, the TUI, and CLI /attach.  vision_analyze
-        # remains available as a tool regardless of this setting — the routing
-        # only controls how inbound user images are presented.
+        # is always available as a tool independent of this setting.
+        "vision_attachment_mode": "auto",
+        # When True (default), push a gateway notification when a /goal completes.
+        "goal_notifications": True,
         "image_input_mode": "auto",
         "disabled_toolsets": [],
     },

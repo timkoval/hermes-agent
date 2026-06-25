@@ -1267,7 +1267,35 @@ def init_agent(
     # In-memory todo list for task planning (one per agent/session)
     from tools.todo_tool import TodoStore
     agent._todo_store = TodoStore()
-    
+
+    # Workspace cleanup — GC old temp files at session start
+    try:
+        from agent.workspace_gc import run_workspace_gc
+        from tools.memory_tool import get_workspace_dir
+        from hermes_cli.config import load_config as _load_gc_cfg
+        _gc_cfg = _load_gc_cfg()
+        _ws_cfg = _gc_cfg.get("workspace", {}) if isinstance(_gc_cfg, dict) else {}
+        if _ws_cfg.get("cleanup_on_startup", True):
+            run_workspace_gc(
+                workspace_dir=get_workspace_dir(),
+                temp_dir=_ws_cfg.get("temp_dir", "temp"),
+                max_age_hours=_ws_cfg.get("temp_max_age_hours", 48),
+                max_size_mb=_ws_cfg.get("temp_max_size_mb", 500),
+            )
+    except Exception:
+        pass  # GC must never block agent init
+
+    # File dedup cache — cross-session read deduplication
+    try:
+        from agent.dedup_cache import FileDedupCache
+        from tools.memory_tool import get_workspace_dir
+        agent._dedup_cache = FileDedupCache(
+            get_workspace_dir() / ".file_cache.db"
+        )
+        agent._dedup_cache.prune(max_entries=10000)
+    except Exception:
+        agent._dedup_cache = None
+
     # Load config once for memory, skills, and compression sections
     try:
         from hermes_cli.config import load_config as _load_agent_config

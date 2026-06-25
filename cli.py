@@ -8273,6 +8273,56 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         ctx = getattr(self.agent, "_active_context", "default")
         _cprint(f"Active context: {ctx}")
 
+    def _handle_checkpoint_command(self, cmd_original: str) -> None:
+        """Handle /checkpoint — save or list session bookmarks.
+
+        Usage:
+            /checkpoint "mid-refactor"     — save a bookmark
+            /checkpoint list               — show recent bookmarks
+            /checkpoint --status           — show latest bookmark
+        """
+        parts = cmd_original.split(None, 1)
+        args = parts[1].strip() if len(parts) > 1 else ""
+
+        from agent.session_store import CheckpointStore
+        store = CheckpointStore()
+
+        if not args:
+            last = store.last()
+            if last:
+                _cprint(f"Last checkpoint: {last['description'][:80]} ({last['timestamp']})")
+            else:
+                _cprint("No checkpoints yet.")
+            return
+
+        if args == "list":
+            checkpoints = store.list_recent(limit=10)
+            if not checkpoints:
+                _cprint("No checkpoints yet.")
+                return
+            lines = ["Recent checkpoints:"]
+            for cp in checkpoints:
+                lines.append(f"  {cp['timestamp']} — {cp['description'][:80]}")
+                lines.append(f"    session: {cp['session_id'][:12]}...")
+            _cprint("\n".join(lines))
+            return
+
+        if args == "--status":
+            last = store.last()
+            if last:
+                _cprint(f"Last checkpoint ({last['timestamp']}): {last['description']}")
+            else:
+                _cprint("No checkpoints yet.")
+            return
+
+        # Save checkpoint
+        result = store.save(
+            description=args,
+            session_id=getattr(self.agent, "session_id", ""),
+            cwd=os.getcwd(),
+        )
+        _cprint(result)
+
     def _handle_codex_runtime(self, cmd_original: str) -> None:
         """Handle /codex-runtime — toggle the codex app-server runtime opt-in.
 
@@ -8842,6 +8892,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._handle_agents_command()
         elif canonical == "journey":
             self._handle_journey_command(cmd_original)
+        elif canonical == "checkpoint":
+            self._handle_checkpoint_command(cmd_original)
         elif canonical == "background":
             self._handle_background_command(cmd_original)
         elif canonical == "queue":
