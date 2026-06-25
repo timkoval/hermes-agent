@@ -444,6 +444,59 @@ def _merge_custom_provider_extra_body(agent, custom_providers: List[Dict[str, An
     agent.request_overrides = overrides
 
 
+def _resolve_context_for_agent(agent, _agent_cfg):
+    """Read HERMES_CONTEXT / HERMES_PRESET env vars, resolve context
+    config overrides, and apply them to the agent.
+
+    Called early in init_agent so model/credential_pool/toolsets are
+    set BEFORE the main config-read blocks.
+    """
+    import os
+    context_name = os.environ.get("HERMES_CONTEXT") or ""
+    preset_name = os.environ.get("HERMES_PRESET") or ""
+    if not context_name and not preset_name:
+        return
+
+    from agent.toolset_resolver import (
+        resolve_context_config,
+        resolve_preset,
+        apply_context_to_config,
+    )
+
+    # Resolve context config
+    if context_name:
+        ctx = resolve_context_config(context_name, _agent_cfg)
+        if ctx is None:
+            _ra().logger.warning(
+                "Context '%s' not found in config — ignoring. "
+                "Available contexts: %s",
+                context_name,
+                list(_agent_cfg.get("contexts", {}).keys()),
+            )
+        else:
+            # Apply model override
+            ctx_model = ctx.get("model", {})
+            if isinstance(ctx_model, dict) and ctx_model.get("default"):
+                agent.model = ctx_model["default"]
+            # Apply credential pool
+            if ctx.get("credential_pool"):
+                agent._credential_pool = ctx["credential_pool"]
+            # Apply git identity (stored for system-prompt injection)
+            ctx_git = ctx.get("git", {})
+            if isinstance(ctx_git, dict) and ctx_git.get("name"):
+                agent._context_git_name = ctx_git["name"]
+                agent._context_git_email = ctx_git.get("email", "")
+            # Store active context name for system prompt
+            agent._active_context = context_name
+
+    # Resolve preset to enabled_toolsets override
+    if preset_name:
+        toolsets = resolve_preset(preset_name, _agent_cfg)
+        if toolsets:
+            agent.enabled_toolsets = toolsets
+            agent._active_preset = preset_name
+
+
 def init_agent(
     agent,
     base_url: str = None,
@@ -1491,6 +1544,11 @@ def init_agent(
     # agent/conversation_loop.py's invalid_encrypted_content retry branch.
     agent._codex_reasoning_replay_enabled = True
     agent._memory_write_origin = "assistant_tool"
+
+    # Context/preset — set by CLI arg or env var (HERMES_CONTEXT / HERMES_PRESET).
+    # Populated by _resolve_context_for_agent above, or defaults here.
+    agent._active_context = getattr(agent, "_active_context", "default")
+    agent._active_preset = getattr(agent, "_active_preset", "")
     agent._memory_write_context = "foreground"
     
     # Cached system prompt -- built once per session, only rebuilt on compression
@@ -1550,10 +1608,6 @@ def init_agent(
         _agent_cfg = {}
 
     # Codex commentary visibility (display.show_commentary, default true).
-    # When true, completed Codex phase=commentary messages are delivered as
-    # visible mid-turn updates through the interim message path. When false,
-    # commentary falls back to the reasoning channel (visible only with
-    # show_reasoning enabled).
     agent.show_commentary = True
     try:
         _display_section = _agent_cfg.get("display", {})
@@ -1562,11 +1616,7 @@ def init_agent(
     except Exception:
         agent.show_commentary = True
 
-    # LM Studio can either be explicitly preloaded through LM Studio's
-    # management API (the historical Hermes behavior) or left to LM Studio's
-    # just-in-time / Auto-Evict chat-completions path.  Keep the default
-    # explicit for backward compatibility; users with LM Studio Auto-Evict can
-    # opt into JIT via ``model.lmstudio_load_mode: jit``.
+    # LM Studio load mode
     agent.lmstudio_load_mode = "explicit"
     try:
         _model_section = _agent_cfg.get("model", {})
@@ -1581,6 +1631,9 @@ def init_agent(
                 )
     except Exception:
         agent.lmstudio_load_mode = "explicit"
+
+    # ── Context resolution (overrides model/credential/toolsets) ──
+    _resolve_context_for_agent(agent, _agent_cfg)
 
     try:
         agent._tool_guardrails = ToolCallGuardrailController(
