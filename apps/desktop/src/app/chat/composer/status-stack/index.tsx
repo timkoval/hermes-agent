@@ -106,6 +106,18 @@ export function ComposerStatusStack({ queue, sessionId }: ComposerStatusStackPro
   const openSubagent = (item: ComposerStatusItem) =>
     item.sessionId ? void openSessionInNewWindow(item.sessionId, { watch: true }) : openAgents()
 
+  // Preview links live as child rows of the background group — a localhost dev
+  // server and its preview are the same thing — so they no longer float as an
+  // odd, differently-indented standalone block under the stack.
+  const previewRows =
+    visiblePreviews.length > 0 && sessionId
+      ? visiblePreviews.map(item => (
+          <PreviewStatusRow item={item} key={item.id} onDismiss={id => dismissPreviewArtifact(sessionId, id)} />
+        ))
+      : []
+
+  const hasBackgroundGroup = groups.some(g => g.type === 'background')
+
   const sections: { key: string; node: ReactNode }[] = groups.map(group => ({
     key: group.type,
     node: (
@@ -136,22 +148,17 @@ export function ComposerStatusStack({ queue, sessionId }: ComposerStatusStackPro
             onStop={sessionId ? id => void stopBackgroundProcess(sessionId, id) : undefined}
           />
         ))}
+        {group.type === 'background' && previewRows}
       </StatusSection>
     )
   }))
 
-  if (visiblePreviews.length > 0 && sessionId) {
+  // No background group to host them (e.g. a standalone on-disk file preview):
+  // keep the previews as their own row block so they don't disappear.
+  if (previewRows.length > 0 && !hasBackgroundGroup) {
     sections.push({
       key: 'preview',
-      // Not a collapsible group — preview links just sit there, one line each,
-      // each individually closeable.
-      node: (
-        <div className="px-1 py-0.5">
-          {visiblePreviews.map(item => (
-            <PreviewStatusRow item={item} key={item.id} onDismiss={id => dismissPreviewArtifact(sessionId, id)} />
-          ))}
-        </div>
-      )
+      node: <div className="px-1 py-0.5">{previewRows}</div>
     })
   }
 

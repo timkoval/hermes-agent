@@ -71,7 +71,7 @@ const TOOL_HEADER_GLYPH_WRAP_CLASS = 'grid size-3.5 shrink-0 place-items-center 
 
 // Glass-style section label that sits above any pre/JSON/output block.
 // Lowercase tracking + tiny size so it reads as a quiet field label rather
-// than a chrome heading. Used for "COMMAND OUTPUT", "INPUT", "OUTPUT", etc.
+// than a chrome heading. Used for "stdout", "stderr", "Search results", etc.
 const TOOL_SECTION_LABEL_CLASS = 'mb-1 text-[0.65rem] font-medium uppercase tracking-[0.08em] text-(--ui-text-tertiary)'
 
 // Inset scroll surface for any detail body. The expanded tool row owns the

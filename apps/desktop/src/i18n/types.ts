@@ -1533,6 +1533,7 @@ export interface Translations {
     hide: string
     openPreview: string
     openInBrowser: string
+    linkHint: string
     sourceLineTitle: string
     source: string
     renderedPreview: string

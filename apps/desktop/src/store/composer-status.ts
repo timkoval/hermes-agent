@@ -39,6 +39,63 @@ export const $backgroundStatusBySession = atom<Record<string, ComposerStatusItem
 // while, so without this every refresh would resurrect a dismissed row.
 const dismissedBySession = new Map<string, Set<string>>()
 
+// Finished tasks self-clear so the stack only ever holds running work. Success
+// goes quick; failure lingers longer so its exit code stays readable (the output
+// also lives in the transcript). A manual X still drops either at once.
+const SUCCESS_LINGER_MS = 4_000
+const FAILURE_LINGER_MS = 12_000
+const autoClearTimers = new Map<string, Map<string, ReturnType<typeof setTimeout>>>()
+
+function scheduleAutoDismiss(sid: string, id: string, delayMs: number) {
+  let timers = autoClearTimers.get(sid)
+
+  if (timers?.has(id)) {
+    return
+  }
+
+  if (!timers) {
+    timers = new Map()
+    autoClearTimers.set(sid, timers)
+  }
+
+  timers.set(
+    id,
+    setTimeout(() => {
+      autoClearTimers.get(sid)?.delete(id)
+      dismissBackgroundProcess(sid, id)
+    }, delayMs)
+  )
+}
+
+function cancelAutoDismiss(sid: string, id: string) {
+  const timers = autoClearTimers.get(sid)
+
+  if (!timers) {
+    return
+  }
+
+  const timer = timers.get(id)
+
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    timers.delete(id)
+  }
+}
+
+function cancelAllAutoDismiss(sid: string) {
+  const timers = autoClearTimers.get(sid)
+
+  if (!timers) {
+    return
+  }
+
+  for (const timer of timers.values()) {
+    clearTimeout(timer)
+  }
+
+  autoClearTimers.delete(sid)
+}
+
 const subToItem = (s: SubagentProgress): ComposerStatusItem => ({
   currentTool: s.currentTool,
   id: s.id,
@@ -202,6 +259,24 @@ export function reconcileBackgroundProcesses(sid: string, procs: GatewayProcessE
     }
   }
 
+  // Arm the self-clear on every finished task (failures linger longer); cancel
+  // it for anything running again or gone from the snapshot.
+  const finishedDelay = new Map(
+    next
+      .filter(item => item.state !== 'running')
+      .map(item => [item.id, item.state === 'failed' ? FAILURE_LINGER_MS : SUCCESS_LINGER_MS])
+  )
+
+  for (const [id, delay] of finishedDelay) {
+    scheduleAutoDismiss(sid, id, delay)
+  }
+
+  for (const id of [...(autoClearTimers.get(sid)?.keys() ?? [])]) {
+    if (!finishedDelay.has(id)) {
+      cancelAutoDismiss(sid, id)
+    }
+  }
+
   if (next.length === prev.length && next.every((item, i) => item === prev[i])) {
     return
   }
@@ -228,6 +303,8 @@ export async function refreshBackgroundProcesses(sid: string): Promise<void> {
 
 /** X on a finished row: drop it now and keep it dropped across refreshes. */
 export function dismissBackgroundProcess(sid: string, id: string) {
+  cancelAutoDismiss(sid, id)
+
   const dismissed = dismissedBySession.get(sid) ?? new Set<string>()
   dismissed.add(id)
   dismissedBySession.set(sid, dismissed)
@@ -264,6 +341,8 @@ export function resetSessionBackground(sid: string) {
   if (!sid) {
     return
   }
+
+  cancelAllAutoDismiss(sid)
 
   const gateway = $gateway.get()
   const list = $backgroundStatusBySession.get()[sid] ?? []

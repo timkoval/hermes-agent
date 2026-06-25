@@ -1273,10 +1273,6 @@ function toolDetailLabel(toolName: string): string {
     return 'Snapshot summary'
   }
 
-  if (toolName === 'terminal' || toolName === 'execute_code') {
-    return 'Command output'
-  }
-
   return ''
 }
 
