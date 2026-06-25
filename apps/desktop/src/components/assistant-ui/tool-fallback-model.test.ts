@@ -153,6 +153,52 @@ describe('buildToolView title actions', () => {
     expect(view.titleAction).toBeUndefined()
   })
 
+  it('uses the filename for completed read_file rows', () => {
+    const view = buildToolView(
+      part({ args: { path: './package.json' }, result: { content: '1|{"name":"demo"}' }, toolName: 'read_file' }),
+      ''
+    )
+
+    expect(view.title).toBe('package.json')
+    expect(view.subtitle).toBe('')
+    expect(view.titleAction).toBeUndefined()
+  })
+
+  it('renders compact terminal titles for session 20260624_231846_bdbd1e commands', () => {
+    const rows = [
+      [
+        'cd /Users/brooklyn/www/bb-rainbows && pnpm run lint 2>&1 | tail -20; echo "lint_exit=${PIPESTATUS[0]}"',
+        'Ran · pnpm run lint'
+      ],
+      [
+        'cd /Users/brooklyn/www/bb-rainbows && pnpm run build 2>&1 | tail -20; echo "build_exit=${PIPESTATUS[0]}"',
+        'Ran · pnpm run build'
+      ],
+      [
+        'which node pnpm corepack; node -v; echo "---"; corepack --version 2>&1; echo "---pnpm via corepack---"; pnpm --version 2>&1 | tail -5',
+        'Ran · which node pnpm corepack + 3 commands'
+      ],
+      [
+        'echo "--- proto pnpm direct ---"; ~/.proto/tools/node/24.11.0/bin/pnpm --version 2>&1 | tail -3; echo "--- proto node ---"; ls ~/.proto/tools/node/ 2>&1; echo "--- corepack cache ---"; ls ~/.cache/node/corepack/v1/pnpm/ 2>&1',
+        'Ran · ~/.proto/tools/node/24.11.0/bin/pnpm --version + 2 commands'
+      ],
+      [
+        'cd /Users/brooklyn/www/bb-rainbows && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@10.20.0 --version 2>&1 | tail -3',
+        'Ran · COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack pnpm@10.20.0 --version'
+      ],
+      [
+        'cd /Users/brooklyn/www/bb-rainbows && COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack use pnpm@10.20.0 2>&1 | tail -10; echo "exit=$?"',
+        'Ran · COREPACK_ENABLE_DOWNLOAD_PROMPT=0 corepack use pnpm@10.20.0'
+      ]
+    ] as const
+
+    for (const [command, expectedTitle] of rows) {
+      const view = buildToolView(part({ args: { command }, result: { output: 'ok', exit_code: 0 }, toolName: 'terminal' }), '')
+
+      expect(view.title).toBe(expectedTitle)
+    }
+  })
+
   it('uses the runtime locale for title text and action placement', () => {
     setRuntimeI18nLocale('ja')
 

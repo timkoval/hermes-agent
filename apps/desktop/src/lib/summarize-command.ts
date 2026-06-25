@@ -1,18 +1,16 @@
-// Leading "setup" commands that aren't the point of the line.
+// Adapted from condensed-milk-pi's command dispatcher: split compounds first,
+// strip pipe tails (`| head`, `| tail`, ...), then clean redirects/env prefixes
+// before deciding which segment is meaningful. This is display-only; the full
+// command remains available through Copy / detail.
 const SILENT_HEADS = new Set(['cd', 'pushd', 'popd', 'export', 'set', 'unset', 'source', '.', 'true', 'false', ':'])
-
-// Trailing pager/wrapper commands that only reshape output for display.
-const PAGER_HEADS = new Set(['tail', 'head', 'cat', 'less', 'more'])
-
-// Top-level control operators that separate one command from the next. A bare
-// `&` is intentionally NOT here — it would split a `2>&1` redirection at its `&`.
-const SEPARATORS = ['&&', '||', '|&', ';;', ';', '|', '\n']
+const PIPE_TAIL_HEADS = new Set(['head', 'tail', 'wc', 'sort', 'uniq'])
 
 const basename = (head: string): string => head.split('/').pop() || head
 
-// Split on control operators at the top level only — runs of text inside single
-// or double quotes are left intact so a `|` or `;` in an argument never splits.
-function splitTopLevel(input: string): string[] {
+// Split on command-chain separators, but NOT pipe. A pipe usually belongs to
+// the segment's output plumbing (`cmd 2>&1 | tail -20`); condensed-milk strips
+// that after segmenting instead of treating it as a separate producer.
+function splitCompoundCommand(input: string): string[] {
   const segments: string[] = []
   let buf = ''
   let quote: '"' | "'" | null = null
@@ -37,7 +35,12 @@ function splitTopLevel(input: string): string[] {
       continue
     }
 
-    const op = SEPARATORS.find(sep => input.startsWith(sep, i))
+    const op =
+      input.startsWith('&&', i) || input.startsWith('||', i)
+        ? input.slice(i, i + 2)
+        : ch === ';' || ch === '\n'
+          ? ch
+          : ''
 
     if (op) {
       segments.push(buf)
@@ -52,12 +55,56 @@ function splitTopLevel(input: string): string[] {
 
   segments.push(buf)
 
-  return segments.map(segment => segment.trim()).filter(Boolean)
+  return segments.map(segment => stripPipeTail(segment.trim())).filter(Boolean)
+}
+
+function splitWords(segment: string): string[] {
+  const words: string[] = []
+  let buf = ''
+  let quote: '"' | "'" | null = null
+
+  for (let i = 0; i < segment.length; i += 1) {
+    const ch = segment[i]!
+
+    if (quote) {
+      buf += ch
+
+      if (ch === quote && segment[i - 1] !== '\\') {
+        quote = null
+      }
+
+      continue
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      buf += ch
+
+      continue
+    }
+
+    if (/\s/.test(ch)) {
+      if (buf) {
+        words.push(buf)
+        buf = ''
+      }
+
+      continue
+    }
+
+    buf += ch
+  }
+
+  if (buf) {
+    words.push(buf)
+  }
+
+  return words
 }
 
 // The command word of a segment, skipping any `FOO=bar` env assignments.
 function headWord(segment: string): string {
-  const tokens = segment.split(/\s+/)
+  const tokens = splitWords(segment)
   let index = 0
 
   while (index < tokens.length && /^[A-Za-z_]\w*=/.test(tokens[index]!)) {
@@ -67,23 +114,58 @@ function headWord(segment: string): string {
   return basename(tokens[index] ?? '')
 }
 
-// `echo` segments — banner separators (`echo "--- step ---"`) and status
-// captures (`echo "x_exit=$?"`) the agent sprinkles around real work. `echo`
-// never does work, so dropping it at either boundary can't hide a command.
-const isEcho = (segment: string): boolean => headWord(segment) === 'echo'
+function stripPipeTail(segment: string): string {
+  const words = splitWords(segment)
+  const out: string[] = []
 
-// Drop redirections (`2>&1`, `> log`, `>> out`, `< in`) from the chosen segment.
-// Skipped when the segment contains quotes, so a `>` inside an argument is safe.
-function stripRedirections(segment: string): string {
-  if (/["']/.test(segment)) {
-    return segment
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i]!
+
+    if (word === '|' && PIPE_TAIL_HEADS.has(basename(words[i + 1] ?? ''))) {
+      break
+    }
+
+    out.push(word)
   }
 
-  return segment
-    .replace(/\s*\d*>>?(?:&\d+|\s*\S+)/g, '')
-    .replace(/\s*\d*<\s*\S+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return out.join(' ').trim()
+}
+
+function cleanSegment(segment: string): string {
+  const words = splitWords(segment)
+  const out: string[] = []
+
+  for (let i = 0; i < words.length; i += 1) {
+    const word = words[i]!
+
+    if (/^\d*(?:>>?|<)$/.test(word)) {
+      i += 1
+
+      continue
+    }
+
+    if (/^\d*(?:>&|<&)\d+$/.test(word) || /^\d*>&\d+$/.test(word)) {
+      continue
+    }
+
+    out.push(word)
+  }
+
+  return out.join(' ').trim()
+}
+
+function isBoundaryEcho(segment: string): boolean {
+  const words = splitWords(segment)
+
+  if (basename(words[0] ?? '') !== 'echo') {
+    return false
+  }
+
+  // Banner/status echoes are UI plumbing. Do not treat arbitrary `echo $VALUE`
+  // as noise; it may be the command's actual output.
+  const rest = words.slice(1).join(' ')
+
+  return /-{2,}|_exit=|(?:^|\s|=)\$[?{]|PIPESTATUS/.test(rest)
 }
 
 /**
@@ -94,16 +176,14 @@ function stripRedirections(segment: string): string {
  * about. This peels that wrapper off using small head-word allowlists instead of
  * one giant regex:
  *
- *   1. split into segments on top-level `&&` `||` `;` `|` (quote-aware)
- *   2. drop leading setup / banner segments (`cd`, `export`, `source`, env
- *      assignments, `echo "--- step ---"`…)
- *   3. drop trailing pager / echo segments (`tail`, `head`, `echo $?`…)
- *   4. strip redirections from the one segment that's left
+ *   1. split into segments on top-level `&&` `||` `;` (quote-aware)
+ *   2. strip trailing pipe tails (`| head`, `| tail`, `| wc`, ...)
+ *   3. clean env var prefixes / redirects
+ *   4. drop setup/banner/status segments
  *
- * Deliberately conservative: if more than one "real" command survives (a genuine
- * compound like `git add -A && git commit -m …`), the original is returned
- * untouched. We only simplify when exactly one meaningful command remains, so we
- * never hide work. The full command is always still available via Copy / detail.
+ * If one real command survives, show it. If multiple real commands survive,
+ * show a short `first command + N commands` label instead of flooding the row
+ * with every probe. The full command is always still available via Copy/detail.
  */
 export function summarizeShellCommand(raw: string): string {
   const original = (raw ?? '').trim()
@@ -112,34 +192,25 @@ export function summarizeShellCommand(raw: string): string {
     return ''
   }
 
-  const segments = splitTopLevel(original)
+  const segments = splitCompoundCommand(original)
 
   if (segments.length <= 1) {
+    return cleanSegment(original) || original
+  }
+
+  const core = segments.map(cleanSegment).filter(segment => {
+    const head = headWord(segment)
+
+    return segment && !SILENT_HEADS.has(head) && !isBoundaryEcho(segment)
+  })
+
+  if (core.length === 0) {
     return original
   }
 
-  let start = 0
-  let end = segments.length
-
-  while (start < end && (SILENT_HEADS.has(headWord(segments[start]!)) || isEcho(segments[start]!))) {
-    start += 1
+  if (core.length === 1) {
+    return core[0]!
   }
 
-  while (
-    end > start &&
-    (PAGER_HEADS.has(headWord(segments[end - 1]!)) ||
-      isEcho(segments[end - 1]!) ||
-      SILENT_HEADS.has(headWord(segments[end - 1]!)))
-  ) {
-    end -= 1
-  }
-
-  const core = segments.slice(start, end)
-
-  // Nothing meaningful, or a real multi-command compound — leave it alone.
-  if (core.length !== 1) {
-    return original
-  }
-
-  return stripRedirections(core[0]!) || original
+  return `${core[0]} + ${core.length - 1} ${core.length === 2 ? 'command' : 'commands'}`
 }

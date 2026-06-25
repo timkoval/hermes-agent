@@ -1291,7 +1291,7 @@ function toolDetailText(
     }
   }
 
-  if (part.toolName === 'read_file') {
+  if (part.toolName === 'read_file' && part.result !== undefined) {
     const content = firstStringField(resultRecord, ['content', 'text', 'data', 'body'])
 
     if (content) {
@@ -1402,7 +1402,7 @@ export function toolCopyPayload(part: ToolPart, view: ToolView): { label: string
     }
   }
 
-  if (part.toolName === 'read_file') {
+  if (part.toolName === 'read_file' && part.result !== undefined) {
     if (hasSubstantialOutput) {
       return { label: copy.file, text: detail }
     }
@@ -1521,6 +1521,14 @@ function dynamicTitle(
           compactPreview(summarizeShellCommand(command), 160)
         )
       )
+    }
+  }
+
+  if (part.toolName === 'read_file' && part.result !== undefined) {
+    const path = firstStringField(args, ['path', 'file', 'filepath'])
+
+    if (path) {
+      return { title: fileEditBasename(path) }
     }
   }
 
