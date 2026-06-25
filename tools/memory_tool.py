@@ -2,13 +2,9 @@
 """
 Memory Tool Module - Persistent Curated Memory
 
-Provides bounded, file-backed memory that persists across sessions. Two stores:
-  - MEMORY.md: agent's personal notes and observations (environment facts, project
-    conventions, tool quirks, things learned)
-  - USER.md: what the agent knows about the user (preferences, communication style,
-    expectations, workflow habits)
+Provides bounded, file-backed memory that persists across sessions. Three stores:\n  - MEMORY.md: agent's personal notes and observations (environment facts, project\n    conventions, tool quirks, things learned)\n  - USER.md: what the agent knows about the user (preferences, communication style,\n    expectations, workflow habits)\n  - WORKING.md: cached project context with TTL expiry — survives /new but not\n    long-term disuse (30-day idle TTL). Stored in the workspace directory. 
 
-Both are injected into the system prompt as a frozen snapshot at session start.
+All three are injected into the system prompt as a frozen snapshot at session start.
 Mid-session writes update files on disk immediately (durable) but do NOT change
 the system prompt -- this preserves the prefix cache for the entire session.
 The snapshot refreshes on the next session start.
@@ -52,6 +48,24 @@ logger = logging.getLogger(__name__)
 # (HERMES_HOME env var changes) are always respected.  The old module-level
 # constant was cached at import time and could go stale if a profile switch
 # happened after the first import.
+def get_workspace_dir() -> Path:
+    """Return the agent workspace directory.
+
+    Resolved from config (workspace.path), defaulting to
+    ``$HERMES_HOME/workspace/`` when unset or empty.
+    """
+    try:
+        from hermes_cli.config import load_config
+        config = load_config()
+        ws_cfg = config.get("workspace", {}) if isinstance(config, dict) else {}
+        ws_path = (ws_cfg.get("path") or "").strip()
+        if ws_path:
+            return Path(ws_path).expanduser()
+    except Exception:
+        pass
+    return get_hermes_home() / "workspace"
+
+
 def get_memory_dir() -> Path:
     """Return the profile-scoped memories directory."""
     return get_hermes_home() / "memories"
@@ -127,13 +141,15 @@ class MemoryStore:
     # turn to budget exhaustion and suppress the user's reply (issue #42405).
     _MAX_CONSOLIDATION_FAILURES_PER_TURN = 3
 
-    def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375):
+    def __init__(self, memory_char_limit: int = 2200, user_char_limit: int = 1375, working_char_limit: int = 8000):
         self.memory_entries: List[str] = []
         self.user_entries: List[str] = []
+        self.working_entries: List[str] = []
         self.memory_char_limit = memory_char_limit
         self.user_char_limit = user_char_limit
+        self.working_char_limit = working_char_limit
         # Frozen snapshot for system prompt -- set once at load_from_disk()
-        self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": ""}
+        self._system_prompt_snapshot: Dict[str, str] = {"memory": "", "user": "", "working": ""}
         # Per-turn counter of failed at-capacity consolidation attempts; reset
         # at each turn boundary by reset_consolidation_failures() (#42405).
         self._consolidation_failures = 0
@@ -188,20 +204,30 @@ class MemoryStore:
         self.memory_entries = self._read_file(mem_dir / "MEMORY.md")
         self.user_entries = self._read_file(mem_dir / "USER.md")
 
+        # Working memory lives in the workspace directory, not memories/
+        workspace_dir = get_workspace_dir()
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        self.working_entries = self._read_file(workspace_dir / "WORKING.md")
+        # TTL filtering: drop entries with no activity in working_ttl_days
+        self._apply_working_ttl()
+
         # Deduplicate entries (preserves order, keeps first occurrence)
         self.memory_entries = list(dict.fromkeys(self.memory_entries))
         self.user_entries = list(dict.fromkeys(self.user_entries))
+        self.working_entries = list(dict.fromkeys(self.working_entries))
 
         # Sanitize entries for the system-prompt snapshot only.  Live state
         # (memory_entries / user_entries) keeps the raw text so the user
         # can see + remove poisoned entries via the memory tool.
         sanitized_memory = self._sanitize_entries_for_snapshot(self.memory_entries, "MEMORY.md")
         sanitized_user = self._sanitize_entries_for_snapshot(self.user_entries, "USER.md")
+        sanitized_working = self._sanitize_entries_for_snapshot(self.working_entries, "WORKING.md")
 
         # Capture frozen snapshot for system prompt injection
         self._system_prompt_snapshot = {
             "memory": self._render_block("memory", sanitized_memory),
             "user": self._render_block("user", sanitized_user),
+            "working": self._render_block("working", sanitized_working),
         }
 
     @staticmethod
@@ -277,8 +303,10 @@ class MemoryStore:
                     pass
             fd.close()
 
-    @staticmethod
-    def _path_for(target: str) -> Path:
+
+    def _path_for(self, target: str) -> Path:
+        if target == "working":
+            return get_workspace_dir() / "WORKING.md"
         mem_dir = get_memory_dir()
         if target == "user":
             return mem_dir / "USER.md"
@@ -308,17 +336,22 @@ class MemoryStore:
 
     def save_to_disk(self, target: str):
         """Persist entries to the appropriate file. Called after every mutation."""
-        get_memory_dir().mkdir(parents=True, exist_ok=True)
-        self._write_file(self._path_for(target), self._entries_for(target))
+        path = self._path_for(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_file(path, self._entries_for(target))
 
     def _entries_for(self, target: str) -> List[str]:
         if target == "user":
             return self.user_entries
+        if target == "working":
+            return self.working_entries
         return self.memory_entries
 
     def _set_entries(self, target: str, entries: List[str]):
         if target == "user":
             self.user_entries = entries
+        elif target == "working":
+            self.working_entries = entries
         else:
             self.memory_entries = entries
 
@@ -331,6 +364,8 @@ class MemoryStore:
     def _char_limit(self, target: str) -> int:
         if target == "user":
             return self.user_char_limit
+        if target == "working":
+            return self.working_char_limit
         return self.memory_char_limit
 
     def add(self, target: str, content: str) -> Dict[str, Any]:
@@ -673,11 +708,43 @@ class MemoryStore:
 
         if target == "user":
             header = f"USER PROFILE (who the user is) [{pct}% — {current:,}/{limit:,} chars]"
+        elif target == "working":
+            header = f"WORKING MEMORY (cached context, TTL-expiring) [{pct}% — {current:,}/{limit:,} chars]"
         else:
             header = f"MEMORY (your personal notes) [{pct}% — {current:,}/{limit:,} chars]"
 
         separator = "═" * 46
         return f"{separator}\n{header}\n{separator}\n{content}"
+
+    def _apply_working_ttl(self):
+        """Drop working memory entries that have exceeded the TTL.
+
+        Uses WORKING.md's mtime as a coarse age signal: if the file hasn't
+        been written in ``working_ttl_days`` days, all entries are dropped.
+        """
+        from hermes_cli.config import load_config
+        try:
+            config = load_config()
+            memory_cfg = config.get("memory", {}) if isinstance(config, dict) else {}
+            ttl_days = memory_cfg.get("working_ttl_days", 30)
+        except Exception:
+            ttl_days = 30
+
+        workspace_dir = get_workspace_dir()
+        working_path = workspace_dir / "WORKING.md"
+        if not working_path.exists():
+            self.working_entries = []
+            return
+
+        mtime = working_path.stat().st_mtime
+        import time
+        age_days = (time.time() - mtime) / 86400
+        if age_days > ttl_days:
+            self.working_entries = []
+            try:
+                working_path.write_text("", encoding="utf-8")
+            except (OSError, IOError):
+                pass
 
     @staticmethod
     def _read_file(path: Path) -> List[str]:
@@ -977,8 +1044,8 @@ def memory_tool(
     if store is None:
         return tool_error("Memory is not available. It may be disabled in config or this environment.", success=False)
 
-    if target not in {"memory", "user"}:
-        return tool_error(f"Invalid target '{target}'. Use 'memory' or 'user'.", success=False)
+    if target not in {"memory", "user", "working"}:
+        return tool_error(f"Invalid target '{target}'. Use 'memory', 'user', or 'working'.", success=False)
 
     # --- Batch path -------------------------------------------------------
     if operations:
@@ -1074,7 +1141,9 @@ MEMORY_SCHEMA = {
         "IF FULL: an add is rejected with the current entries shown. Reissue as ONE batch that "
         "removes or shortens enough stale entries and adds the new one together.\n\n"
         "TARGETS: 'user' = who the user is (name, role, preferences, style). 'memory' = your "
-        "notes (environment, conventions, tool quirks, lessons).\n\n"
+        "notes (environment, conventions, tool quirks, lessons). 'working' = cached project "
+        "context with 30-day TTL — survives /new but not long-term disuse. Prefer 'working' "
+        "for intermediate state that doesn't deserve permanent memory.\n\n"
         "SKIP: trivial/obvious info, easily re-discovered facts, raw data dumps, task progress, "
         "completed-work logs, temporary TODO state (use session_search for those). Reusable "
         "procedures belong in a skill, not memory."
@@ -1089,8 +1158,8 @@ MEMORY_SCHEMA = {
             },
             "target": {
                 "type": "string",
-                "enum": ["memory", "user"],
-                "description": "Which memory store: 'memory' for personal notes, 'user' for user profile."
+                "enum": ["memory", "user", "working"],
+                "description": "Which memory store: 'memory' for personal notes, 'user' for user profile, 'working' for cached project context (8K chars, 30-day TTL)."
             },
             "content": {
                 "type": "string",

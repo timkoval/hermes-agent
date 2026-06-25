@@ -1824,6 +1824,46 @@ def load_soul_md(context_length: Optional[int] = None) -> Optional[str]:
         return None
 
 
+def load_status_md(context_length: Optional[int] = None) -> Optional[str]:
+    """Load STATUS.md from the agent workspace and return its content, or None.
+
+    Injected into the system prompt after SOUL.md, before memory.
+    The agent maintains this file to preserve active task state across
+    sessions.  When config ``workspace.autoload_status`` is False, returns
+    None regardless of file existence.
+    """
+    from hermes_cli.config import load_config
+    config = load_config()
+    ws_cfg = config.get("workspace", {}) if isinstance(config, dict) else {}
+    if not ws_cfg.get("autoload_status", True):
+        return None
+
+    from hermes_constants import get_hermes_home
+    ws_path = (ws_cfg.get("path") or "").strip()
+    if ws_path:
+        workspace_dir = Path(ws_path).expanduser()
+    else:
+        workspace_dir = get_hermes_home() / "workspace"
+
+    status_path = workspace_dir / "STATUS.md"
+    if not status_path.exists():
+        return None
+    try:
+        content = status_path.read_text(encoding="utf-8").strip()
+        if not content:
+            return None
+        content = _scan_context_content(content, "STATUS.md")
+        status_max = ws_cfg.get("status_max_chars", 3000)
+        content = _truncate_content(
+            content, "STATUS.md", max_chars=status_max,
+            read_path=str(status_path),
+        )
+        return content
+    except Exception as e:
+        logger.debug("Could not read STATUS.md from %s: %s", status_path, e)
+        return None
+
+
 def _load_hermes_md(cwd_path: Path, context_length: Optional[int] = None) -> str:
     """.hermes.md / HERMES.md — walk to git root."""
     hermes_md_path = _find_hermes_md(cwd_path)

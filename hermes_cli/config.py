@@ -2083,6 +2083,25 @@ DEFAULT_CONFIG = {
         # "hindsight", "holographic", "retaindb", "byterover".
         # Only ONE external provider is allowed at a time.
         "provider": "",
+        # Working memory — a larger, TTL-expiring cache tier between
+        # ephemeral (lost on /new) and permanent memory.  Injected into
+        # the system prompt after STATUS.md, before permanent memory.
+        # Uses file-backed storage (WORKING.md) in the workspace dir.
+        "working_memory_enabled": True,
+        "working_char_limit": 8000,    # ~2,900 tokens
+        "working_ttl_days": 30,        # Entries idle >30 days are silently dropped
+    },
+
+    # Agent workspace — a persistent directory for the agent's working
+    # files (STATUS.md, working memory, temporary artifacts). Shared
+    # across sessions and profiles.
+    "workspace": {
+        "path": "",                                  # Empty = auto-resolve to $HERMES_HOME/workspace/
+        "autoload_status": True,                     # Inject STATUS.md into system prompt
+        "status_max_chars": 3000,                    # Cap for STATUS.md injection
+        "temp_dir": "temp",                          # Subdirectory for disposable files
+        "temp_max_age_hours": 48,                    # Auto-clean temp files older than this (0 = disabled)
+        "temp_max_size_mb": 500,                     # Cap total temp dir size (0 = disabled)
     },
 
     # Subagent delegation — override the provider:model used by delegate_task

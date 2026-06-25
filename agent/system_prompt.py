@@ -420,6 +420,16 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         if context_files_prompt:
             context_parts.append(context_files_prompt)
 
+    # STATUS.md — agent's active task state from workspace
+    # Loaded into the context tier so it sits after identity but before
+    # memory.  Only loaded when workspace.autoload_status is True.
+    try:
+        status_md = _r.load_status_md(context_length=_ctx_len)
+        if status_md:
+            context_parts.append(status_md)
+    except Exception:
+        pass
+
     # ── Volatile tier (changes per session/turn — never cached) ───
     volatile_parts: List[str] = []
 
@@ -433,6 +443,11 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             user_block = agent._memory_store.format_for_system_prompt("user")
             if user_block:
                 volatile_parts.append(user_block)
+        # Working memory — cached project context with TTL
+        if agent._working_memory_enabled:
+            working_block = agent._memory_store.format_for_system_prompt("working")
+            if working_block:
+                volatile_parts.append(working_block)
 
     # External memory provider system prompt block (additive to built-in)
     if agent._memory_manager:
