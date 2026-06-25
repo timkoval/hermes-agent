@@ -1,5 +1,6 @@
 import { type ToolTitleKey, translateNow } from '@/i18n'
 import { normalizeExternalUrl } from '@/lib/external-link'
+import { summarizeShellCommand } from '@/lib/summarize-command'
 import { extractToolErrorMessage, formatToolResultSummary } from '@/lib/tool-result-summary'
 
 export type ToolTone = 'agent' | 'browser' | 'default' | 'file' | 'image' | 'terminal' | 'web'
@@ -1182,7 +1183,7 @@ function toolSubtitle(
 
     const command = firstStringField(argsRecord, ['command', 'code']) || contextValue(argsRecord)
 
-    return command ? compactPreview(command, 120) : 'Executed command'
+    return command ? compactPreview(summarizeShellCommand(command), 120) : 'Executed command'
   }
 
   if (toolName === 'read_file' || isFileEditTool(toolName)) {
@@ -1514,7 +1515,11 @@ function dynamicTitle(
 
       return titledAction(
         action,
-        translateNow('assistant.tool.titleTemplates.actionCommand', action, compactPreview(command, 160))
+        translateNow(
+          'assistant.tool.titleTemplates.actionCommand',
+          action,
+          compactPreview(summarizeShellCommand(command), 160)
+        )
       )
     }
   }
