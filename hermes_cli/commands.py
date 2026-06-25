@@ -137,6 +137,15 @@ COMMAND_REGISTRY: list[CommandDef] = [
                "Configuration", aliases=("codex_runtime",),
                args_hint="[auto|codex_app_server]"),
 
+    CommandDef("preset", "Switch toolset preset mid-session (research, coding, lean, etc.)",
+               "Configuration",
+               args_hint="<name>", subcommands=("list",),
+               cli_only=True),
+    CommandDef("context", "Show or switch active context mode",
+               "Configuration",
+               args_hint="[switch <name> | list | status]", subcommands=("switch", "list", "status"),
+               cli_only=True),
+
     CommandDef("personality", "Set a predefined personality", "Configuration",
                args_hint="[name]"),
     CommandDef("statusbar", "Toggle the context/model status bar", "Configuration",

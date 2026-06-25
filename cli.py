@@ -8151,6 +8151,128 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         else:
             _cprint("    (session only — add --global to persist)")
 
+    def _handle_preset_command(self, cmd_original: str) -> None:
+        """Handle /preset — switch toolset preset mid-session.
+
+        Usage:
+            /preset research       — switch to 'research' tools (web, vision, search)
+            /preset coding         — switch to coding tools
+            /preset list           — show available preset names
+            /preset                — show current preset
+        """
+        parts = cmd_original.split(None, 1)
+        name = parts[1].strip().lower() if len(parts) > 1 else ""
+
+        if name == "list":
+            from agent.toolset_resolver import list_preset_names
+            from hermes_cli.config import load_config
+            presets = list_preset_names(load_config())
+            _cprint(f"Available presets: {', '.join(presets)}")
+            return
+
+        if not name:
+            current = getattr(self.agent, "_active_preset", "not set")
+            _cprint(f"Current preset: {current}")
+            return
+
+        # Resolve the preset to toolset list
+        from agent.toolset_resolver import resolve_preset
+        from hermes_cli.config import load_config
+        config = load_config()
+        toolsets = resolve_preset(name, config)
+        if not toolsets:
+            from agent.toolset_resolver import list_preset_names
+            available = list_preset_names(config)
+            _cprint(f"Preset '{name}' not found. Available: {', '.join(available)}")
+            return
+
+        # Apply to the running agent
+        self.agent.enabled_toolsets = toolsets
+        self.agent._active_preset = name
+
+        # Invalidate prompt cache so new tool schemas take effect
+        from agent.system_prompt import invalidate_system_prompt
+        invalidate_system_prompt(self.agent)
+
+        _cprint(f"Switched to preset '{name}' ({len(toolsets)} toolsets).")
+
+    def _handle_context_command(self, cmd_original: str) -> None:
+        """Handle /context — show or switch active context mode.
+
+        Usage:
+            /context                  — show current context
+            /context switch work      — switch to 'work' context (model, credentials)
+            /context list             — show available context names
+            /context status           — show context + preset details
+        """
+        parts = cmd_original.split(None, 2)
+        sub = parts[1].strip().lower() if len(parts) > 1 else ""
+        arg = parts[2].strip() if len(parts) > 2 else ""
+
+        from hermes_cli.config import load_config
+        config = load_config()
+
+        if sub == "list":
+            from agent.toolset_resolver import list_context_names
+            contexts = list_context_names(config)
+            _cprint(f"Available contexts: {', '.join(contexts)}")
+            return
+
+        if sub == "status":
+            ctx = getattr(self.agent, "_active_context", "default")
+            preset = getattr(self.agent, "_active_preset", "not set")
+            model = getattr(self.agent, "model", "unknown")
+            _cprint(f"Context: {ctx}")
+            _cprint(f"Preset: {preset}")
+            _cprint(f"Model: {model}")
+            return
+
+        if sub == "switch" and arg:
+            from agent.toolset_resolver import resolve_context_config, list_context_names
+            ctx = resolve_context_config(arg, config)
+            if ctx is None:
+                available = list_context_names(config)
+                _cprint(f"Context '{arg}' not found. Available: {', '.join(available)}")
+                return
+
+            # Apply model override
+            ctx_model = ctx.get("model", {})
+            if isinstance(ctx_model, dict) and ctx_model.get("default"):
+                self.agent.model = ctx_model["default"]
+            # Apply credential pool
+            if ctx.get("credential_pool"):
+                self.agent._credential_pool = ctx["credential_pool"]
+            # Apply git identity
+            ctx_git = ctx.get("git", {})
+            if isinstance(ctx_git, dict) and ctx_git.get("name"):
+                self.agent._context_git_name = ctx_git["name"]
+                self.agent._context_git_email = ctx_git.get("email", "")
+            # Apply preset from context
+            ctx_preset = ctx.get("preset", "")
+            if ctx_preset:
+                from agent.toolset_resolver import resolve_preset
+                toolsets = resolve_preset(ctx_preset, config)
+                if toolsets:
+                    self.agent.enabled_toolsets = toolsets
+                    self.agent._active_preset = ctx_preset
+
+            self.agent._active_context = arg
+
+            # Invalidate prompt cache
+            from agent.system_prompt import invalidate_system_prompt
+            invalidate_system_prompt(self.agent)
+
+            _cprint(f"Switched to context '{arg}'.")
+            _cprint(f"  Model: {ctx_model.get('default', 'unchanged')}")
+            _cprint(f"  Credential pool: {ctx.get('credential_pool', 'unchanged')}")
+            if ctx_preset:
+                _cprint(f"  Preset: {ctx_preset}")
+            return
+
+        # No subcommand — show current context
+        ctx = getattr(self.agent, "_active_context", "default")
+        _cprint(f"Active context: {ctx}")
+
     def _handle_codex_runtime(self, cmd_original: str) -> None:
         """Handle /codex-runtime — toggle the codex app-server runtime opt-in.
 
@@ -8519,6 +8641,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._handle_model_switch(cmd_original)
         elif canonical == "codex-runtime":
             self._handle_codex_runtime(cmd_original)
+
+        elif canonical == "preset":
+            self._handle_preset_command(cmd_original)
+        elif canonical == "context":
+            self._handle_context_command(cmd_original)
 
         elif canonical == "personality":
             # Use original case (handler lowercases the personality name itself)
