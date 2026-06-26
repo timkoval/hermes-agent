@@ -3755,7 +3755,6 @@ DEFAULT_CONFIG = {
             "model": {},
             "git": {"name": "", "email": ""},
             "preset": "full",
-            "write_scope": [],
         },
     },
 
