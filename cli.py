@@ -6538,6 +6538,15 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             f"Tokens: {total_tokens:,}",
             f"Agent Running: {'Yes' if is_running else 'No'}",
         ])
+
+        try:
+            from agent.context_meter import build_context_usage_line
+            context_line = build_context_usage_line(agent)
+            if context_line:
+                lines.append(context_line)
+        except Exception:
+            pass
+
         self._console_print("\n".join(lines), highlight=False, markup=False)
     
     def _fast_command_available(self) -> bool:
