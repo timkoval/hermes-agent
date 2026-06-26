@@ -1448,6 +1448,22 @@ def init_agent(
             print(f"🔄 Fallback chain ({len(agent._fallback_chain)} providers): " +
                   " → ".join(f"{f['model']} ({f['provider']})" for f in agent._fallback_chain))
 
+    # Load config once for memory, skills, compression, and context sections.
+    # Context resolution must happen BEFORE tool discovery so the selected
+    # preset's toolsets actually affect the available tools.
+    try:
+        from hermes_cli.config import load_config as _load_agent_config
+        _agent_cfg = _load_agent_config()
+    except Exception:
+        _agent_cfg = {}
+
+    # ── Context resolution (overrides model/credential/toolsets) ──
+    _resolve_context_for_agent(agent, _agent_cfg)
+
+    # If a context/preset selected toolsets, use them for tool discovery.
+    if agent.enabled_toolsets is not None:
+        enabled_toolsets = agent.enabled_toolsets
+
     # Get available tools with filtering. Capture the registry generation this
     # snapshot is derived from FIRST, so a later concurrent refresh can tell
     # whether it holds a newer or staler view (see refresh_agent_mcp_tools).
