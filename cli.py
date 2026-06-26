@@ -8152,13 +8152,17 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             _cprint("    (session only — add --global to persist)")
 
     def _handle_preset_command(self, cmd_original: str) -> None:
-        """Handle /preset — switch toolset preset mid-session.
+        """Handle /preset — set the toolset preset for the next session.
 
         Usage:
-            /preset research       — switch to 'research' tools (web, vision, search)
-            /preset coding         — switch to coding tools
+            /preset research       — use 'research' tools on next /new
+            /preset coding         — use coding tools on next /new
             /preset list           — show available preset names
             /preset                — show current preset
+
+        The change is applied via the HERMES_PRESET env var and takes effect
+        on the next session (`/new` or restart) so the current conversation's
+        prompt cache is not invalidated mid-turn.
         """
         parts = cmd_original.split(None, 1)
         name = parts[1].strip().lower() if len(parts) > 1 else ""
@@ -8175,7 +8179,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             _cprint(f"Current preset: {current}")
             return
 
-        # Resolve the preset to toolset list
+        # Resolve the preset to validate it exists
         from agent.toolset_resolver import resolve_preset
         from hermes_cli.config import load_config
         config = load_config()
@@ -8186,24 +8190,26 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             _cprint(f"Preset '{name}' not found. Available: {', '.join(available)}")
             return
 
-        # Apply to the running agent
-        self.agent.enabled_toolsets = toolsets
+        # Persist for the next session rather than invalidating the current
+        # conversation's prompt cache.
+        import os
+        os.environ["HERMES_PRESET"] = name
         self.agent._active_preset = name
 
-        # Invalidate prompt cache so new tool schemas take effect
-        from agent.system_prompt import invalidate_system_prompt
-        invalidate_system_prompt(self.agent)
-
-        _cprint(f"Switched to preset '{name}' ({len(toolsets)} toolsets).")
+        _cprint(f"Preset '{name}' ({len(toolsets)} toolsets) will take effect on the next session (`/new`).")
 
     def _handle_context_command(self, cmd_original: str) -> None:
-        """Handle /context — show or switch active context mode.
+        """Handle /context — set the active context for the next session.
 
         Usage:
             /context                  — show current context
-            /context switch work      — switch to 'work' context (model, credentials)
+            /context switch work      — use 'work' context on next /new
             /context list             — show available context names
             /context status           — show context + preset details
+
+        The change is applied via HERMES_CONTEXT / HERMES_PRESET env vars and
+        takes effect on the next session (`/new` or restart) so the current
+        conversation's prompt cache is not invalidated mid-turn.
         """
         parts = cmd_original.split(None, 2)
         sub = parts[1].strip().lower() if len(parts) > 1 else ""
@@ -8235,31 +8241,23 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 _cprint(f"Context '{arg}' not found. Available: {', '.join(available)}")
                 return
 
-            # Apply model override
-            ctx_model = ctx.get("model", {})
-            if isinstance(ctx_model, dict) and ctx_model.get("default"):
-                self.agent.model = ctx_model["default"]
-            # Apply credential pool
-            if ctx.get("credential_pool"):
-                self.agent._credential_pool = ctx["credential_pool"]
-            # Apply preset from context
+            # Persist for the next session rather than invalidating the current
+            # conversation's prompt cache.
+            import os
+            os.environ["HERMES_CONTEXT"] = arg
             ctx_preset = ctx.get("preset", "")
             if ctx_preset:
-                from agent.toolset_resolver import resolve_preset
-                toolsets = resolve_preset(ctx_preset, config)
-                if toolsets:
-                    self.agent.enabled_toolsets = toolsets
-                    self.agent._active_preset = ctx_preset
+                os.environ["HERMES_PRESET"] = ctx_preset
+                self.agent._active_preset = ctx_preset
 
             self.agent._active_context = arg
 
-            # Invalidate prompt cache
-            from agent.system_prompt import invalidate_system_prompt
-            invalidate_system_prompt(self.agent)
-
-            _cprint(f"Switched to context '{arg}'.")
-            _cprint(f"  Model: {ctx_model.get('default', 'unchanged')}")
-            _cprint(f"  Credential pool: {ctx.get('credential_pool', 'unchanged')}")
+            _cprint(f"Context '{arg}' will take effect on the next session (`/new`).")
+            ctx_model = ctx.get("model", {})
+            if isinstance(ctx_model, dict) and ctx_model.get("default"):
+                _cprint(f"  Model: {ctx_model['default']}")
+            if ctx.get("credential_pool"):
+                _cprint(f"  Credential pool: {ctx.get('credential_pool')}")
             if ctx_preset:
                 _cprint(f"  Preset: {ctx_preset}")
             return
