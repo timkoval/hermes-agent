@@ -43,6 +43,8 @@ Examples:
     hermes chat -q "Hello"        Single query mode
     hermes --tui                  Launch the modern TUI (or set display.interface: tui)
     hermes --cli                  Force the classic REPL (overrides display.interface: tui)
+    hermes --context coding       Start with the 'coding' context (model, preset, toolsets)
+    hermes --preset lean          Start with the 'lean' toolset preset
     hermes -c                     Resume the most recent session
     hermes -c "my project"        Resume a session by name (latest in lineage)
     hermes --resume <session_id>  Resume a specific session by ID
@@ -219,6 +221,18 @@ def build_top_level_parser():
         action="store_true",
         default=False,
         help="Troubleshooting mode: disable ALL customizations — user config, AGENTS.md/memory injection, plugins, and MCP servers (implies --ignore-user-config and --ignore-rules)",
+    )
+    parser.add_argument(
+        "--context",
+        default=None,
+        help="Context mode (default: 'default'). Named config in config.yaml ``contexts:``. "
+             "Each context bundles credential_pool, model, git identity, and toolset preset.",
+    )
+    parser.add_argument(
+        "--preset",
+        default=None,
+        help="Toolset preset (default: context's preset). Named bundle in config.yaml ``toolset_presets:``. "
+             "Options: full, coding, research, lean, emergency, or any custom name.",
     )
     _inherited_flag(
         parser,
