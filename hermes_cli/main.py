@@ -1264,10 +1264,16 @@ def _exec_in_container(container_info: dict, cli_args: list):
             host_roots.add(str((get_hermes_home() / ".container-mode").resolve().parent))
         except OSError:
             pass
+        hermes_path = Path(hermes_home_env)
         for host_root in host_roots:
-            if hermes_home_env.startswith(host_root):
-                hermes_home_env = container_home + hermes_home_env[len(host_root):]
-                break
+            host_root_path = Path(host_root)
+            try:
+                hermes_path.relative_to(host_root_path)
+            except ValueError:
+                continue
+            suffix = hermes_path.relative_to(host_root_path)
+            hermes_home_env = str(Path(container_home) / suffix)
+            break
 
     env_flags = []
     for var in ("TERM", "COLORTERM", "LANG", "LC_ALL", "HERMES_HOME"):
