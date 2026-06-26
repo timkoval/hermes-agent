@@ -1342,7 +1342,9 @@ def init_agent(
                     working_char_limit=mem_config.get("working_char_limit", 8000),
                 )
 
-                if agent._memory_enabled or agent._user_profile_enabled:
+                # Load any enabled tier from disk. Working memory must load
+                # even when permanent/user memory is disabled.
+                if agent._memory_enabled or agent._user_profile_enabled or agent._working_memory_enabled:
                     agent._memory_store.load_from_disk()
         except Exception:
             pass  # Memory is optional -- don't break agent init

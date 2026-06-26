@@ -444,7 +444,7 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             if user_block:
                 volatile_parts.append(user_block)
         # Working memory — cached project context with TTL
-        if agent._working_memory_enabled:
+        if getattr(agent, "_working_memory_enabled", False):
             working_block = agent._memory_store.format_for_system_prompt("working")
             if working_block:
                 volatile_parts.append(working_block)

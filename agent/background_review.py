@@ -672,7 +672,7 @@ def _run_review_in_thread(
             review_agent._memory_store = agent._memory_store
             review_agent._memory_enabled = agent._memory_enabled
             review_agent._user_profile_enabled = agent._user_profile_enabled
-            review_agent._working_memory_enabled = agent._working_memory_enabled
+            review_agent._working_memory_enabled = getattr(agent, "_working_memory_enabled", False)
             review_agent._memory_nudge_interval = 0
             review_agent._skill_nudge_interval = 0
             # PERSISTENCE ISOLATION (the curator-takeover root cause): the fork

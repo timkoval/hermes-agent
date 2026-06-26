@@ -2,7 +2,13 @@
 """
 Memory Tool Module - Persistent Curated Memory
 
-Provides bounded, file-backed memory that persists across sessions. Three stores:\n  - MEMORY.md: agent's personal notes and observations (environment facts, project\n    conventions, tool quirks, things learned)\n  - USER.md: what the agent knows about the user (preferences, communication style,\n    expectations, workflow habits)\n  - WORKING.md: cached project context with TTL expiry — survives /new but not\n    long-term disuse (30-day idle TTL). Stored in the workspace directory. 
+Provides bounded, file-backed memory that persists across sessions. Three stores:
+  - MEMORY.md: agent's personal notes and observations (environment facts, project
+    conventions, tool quirks, things learned)
+  - USER.md: what the agent knows about the user (preferences, communication style,
+    expectations, workflow habits)
+  - WORKING.md: cached project context with TTL expiry — survives /new but not
+    long-term disuse (30-day idle TTL). Stored in the workspace directory.
 
 All three are injected into the system prompt as a frozen snapshot at session start.
 Mid-session writes update files on disk immediately (durable) but do NOT change
@@ -128,11 +134,11 @@ class MemoryStore:
     """
     Bounded curated memory with file persistence. One instance per AIAgent.
 
-    Maintains two parallel states:
+    Maintains three parallel states:
       - _system_prompt_snapshot: frozen at load time, used for system prompt injection.
         Never mutated mid-session. Keeps prefix cache stable.
-      - memory_entries / user_entries: live state, mutated by tool calls, persisted to disk.
-        Tool responses always reflect this live state.
+      - memory_entries / user_entries / working_entries: live state, mutated by tool
+        calls, persisted to disk. Tool responses always reflect this live state.
     """
 
     # After this many failed consolidation attempts (overflow / zero-match) in
