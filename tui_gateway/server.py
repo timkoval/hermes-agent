@@ -1972,6 +1972,28 @@ def _config_model_target() -> tuple[str, str]:
 
 
 def _resolve_startup_runtime() -> tuple[str, str | None]:
+    # Context env var (HERMES_CONTEXT) takes highest priority — it's set by
+    # `hermes --context <name>` in the CLI/TUI launcher.
+    context_name = os.environ.get("HERMES_CONTEXT", "").strip()
+    if context_name:
+        try:
+            from agent.toolset_resolver import resolve_context_config
+            cfg = _load_cfg()
+            ctx = resolve_context_config(context_name, cfg)
+            if ctx is not None:
+                ctx_model = ctx.get("model", {})
+                if isinstance(ctx_model, dict):
+                    model = str(ctx_model.get("default", "") or "").strip()
+                    provider = str(ctx_model.get("provider", "") or "").strip()
+                    if model and provider:
+                        return model, provider
+                    if model:
+                        return model, None
+                elif isinstance(ctx_model, str) and ctx_model.strip():
+                    return ctx_model.strip(), None
+        except Exception:
+            pass  # Fall through to normal resolution on error
+
     model = _resolve_model()
     explicit_provider = os.environ.get("HERMES_TUI_PROVIDER", "").strip()
     if explicit_provider:
@@ -2404,6 +2426,33 @@ def _load_enabled_toolsets() -> list[str] | None:
     ]
     cfg = None
     fallback_notice = None
+
+    # Preset env var (HERMES_PRESET) — set by `hermes --preset <name>` in the
+    # CLI/TUI launcher. Takes priority over auto-detection (coding_selection)
+    # but is overridden by an explicit HERMES_TUI_TOOLSETS.
+    if not explicit:
+        preset_name = os.environ.get("HERMES_PRESET", "").strip()
+        # If no explicit preset but a context is active, inherit the context's preset.
+        if not preset_name:
+            context_name = os.environ.get("HERMES_CONTEXT", "").strip()
+            if context_name:
+                try:
+                    from agent.toolset_resolver import resolve_context_config
+                    from hermes_cli.config import load_config
+                    ctx = resolve_context_config(context_name, load_config())
+                    if ctx is not None:
+                        preset_name = str(ctx.get("preset", "") or "").strip()
+                except Exception:
+                    pass
+        if preset_name:
+            try:
+                from agent.toolset_resolver import resolve_preset
+                from hermes_cli.config import load_config
+                preset_tools = resolve_preset(preset_name, load_config())
+                if preset_tools:
+                    return preset_tools
+            except Exception:
+                pass
 
     # Coding posture (base Hermes): with no explicit pin, collapse to the
     # coding toolset (+ enabled MCP servers) when sitting in a code workspace.
