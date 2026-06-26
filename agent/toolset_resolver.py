@@ -12,7 +12,6 @@ Contexts live under ``config.contexts``:
             model: {}
             git: {name: "", email: ""}
             preset: full
-            write_scope: []
 
 Toolset presets live under ``config.toolset_presets``:
     toolset_presets:
@@ -44,7 +43,7 @@ def resolve_context_config(
     if the context name doesn't exist in the config.
 
     Always returns a dict with at least these keys:
-    ``credential_pool``, ``model``, ``git``, ``preset``, ``write_scope``.
+    ``credential_pool``, ``model``, ``git``, ``preset``.
     """
     contexts: Dict = config.get("contexts", {}) if isinstance(config, dict) else {}
     if not contexts or context_name not in contexts:
@@ -56,7 +55,6 @@ def resolve_context_config(
     ctx.setdefault("model", {})
     ctx.setdefault("git", {"name": "", "email": ""})
     ctx.setdefault("preset", _DEFAULT_PRESET)
-    ctx.setdefault("write_scope", [])
     return ctx
 
 
@@ -138,50 +136,3 @@ def _normalize_toolset_list(toolsets) -> List[str]:
     return [str(t) for t in toolsets if isinstance(t, str)]
 
 
-# ---------------------------------------------------------------------------
-# Context-aware config override
-# ---------------------------------------------------------------------------
-
-
-def apply_context_to_config(
-    context_name: str,
-    config: Dict,
-) -> Dict:
-    """Merge a context's config into the root config for agent initialization.
-
-    Returns a config dict override suitable for passing to ``init_agent``.
-    The returned dict has the same shape as ``_agent_cfg``, but with
-    model, credential_pool, and git overridden from the context.
-
-    ``None`` fields mean "no override — use whatever the root config says."
-    """
-    ctx = resolve_context_config(context_name, config)
-    if ctx is None:
-        return {}  # no override
-
-    overrides: Dict = {}
-
-    # Model override
-    ctx_model = ctx.get("model", {})
-    if isinstance(ctx_model, dict) and ctx_model:
-        if "default" in ctx_model:
-            overrides["model"] = ctx_model["default"]
-        # Copy other model fields (provider, base_url, api_key, etc.)
-        overrides.setdefault("model_config_override", {})
-        for k, v in ctx_model.items():
-            if k != "default":
-                overrides.setdefault("model_config_override", {})[k] = v
-
-    # Credential pool override
-    if ctx.get("credential_pool"):
-        overrides["credential_pool"] = ctx["credential_pool"]
-
-    # Git identity override
-    ctx_git = ctx.get("git", {})
-    if isinstance(ctx_git, dict) and (ctx_git.get("name") or ctx_git.get("email")):
-        overrides["git_identity"] = {
-            "name": ctx_git.get("name", ""),
-            "email": ctx_git.get("email", ""),
-        }
-
-    return overrides

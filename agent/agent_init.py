@@ -179,7 +179,6 @@ def _resolve_context_for_agent(agent, _agent_cfg):
     from agent.toolset_resolver import (
         resolve_context_config,
         resolve_preset,
-        apply_context_to_config,
     )
 
     # Resolve context config
@@ -193,10 +192,11 @@ def _resolve_context_for_agent(agent, _agent_cfg):
                 list(_agent_cfg.get("contexts", {}).keys()),
             )
         else:
-            # Apply model override
+            # Apply model override (stored for re-application after the
+            # normal model/provider resolution pipeline runs).
             ctx_model = ctx.get("model", {})
             if isinstance(ctx_model, dict) and ctx_model.get("default"):
-                agent.model = ctx_model["default"]
+                agent._context_model_default = ctx_model["default"]
             # Apply credential pool
             if ctx.get("credential_pool"):
                 agent._credential_pool = ctx["credential_pool"]
@@ -429,6 +429,12 @@ def init_agent(
             agent.model = normalize_model_for_provider(agent.model, agent.provider)
     except Exception:
         pass
+
+    # Re-apply context model override after normal resolution so it wins
+    # over defaults and provider-specific normalization.
+    _ctx_model_default = getattr(agent, "_context_model_default", "")
+    if _ctx_model_default:
+        agent.model = _ctx_model_default
 
     # GPT-5.x models usually require the Responses API path, but some
     # providers have exceptions (for example Copilot's gpt-5-mini still
