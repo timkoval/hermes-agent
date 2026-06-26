@@ -1087,6 +1087,8 @@ DEFAULT_CONFIG = {
         # remains available as a tool regardless of this setting — the routing
         # only controls how inbound user images are presented.
         "image_input_mode": "auto",
+        # When True (default), print a one-line CLI banner when a /goal completes.
+        "goal_notifications": True,
         "disabled_toolsets": [],
     },
     

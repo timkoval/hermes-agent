@@ -9317,8 +9317,21 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             background_processes=_bg_procs,
         )
         msg = decision.get("message") or ""
+        verdict = decision.get("verdict")
         if msg:
-            _cprint(f"  {msg}")
+            # Gate the "goal completed" banner with config; always show
+            # continuation/pause messages so the loop UI remains informative.
+            if verdict == "done":
+                try:
+                    from hermes_cli.config import load_config
+                    cfg = load_config() or {}
+                    agent_cfg = cfg.get("agent", {}) if isinstance(cfg, dict) else {}
+                    if agent_cfg.get("goal_notifications", True):
+                        _cprint(f"  {msg}")
+                except Exception:
+                    _cprint(f"  {msg}")
+            else:
+                _cprint(f"  {msg}")
 
         if decision.get("should_continue"):
             prompt = decision.get("continuation_prompt")
