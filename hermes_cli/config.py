@@ -2172,10 +2172,6 @@ DEFAULT_CONFIG = {
         # Flip to true only if you trust delegated work to run dangerous cmds
         # without human review (cron pipelines, batch automation, etc.).
         "subagent_auto_approve": False,
-        # When notify_on_complete is True on a delegate_task call, the subagent
-        # result is pushed as a gateway notification if the user appears idle.
-        # Default 300 (5 min) — only send notification if no user message in this long.
-        "notify_idle_threshold_seconds": 300,
     },
 
     # Ephemeral prefill messages file — JSON list of {role, content} dicts

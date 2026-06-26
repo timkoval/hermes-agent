@@ -2350,8 +2350,6 @@ def delegate_task(
     acp_args: Optional[List[str]] = None,
     role: Optional[str] = None,
     background: Optional[bool] = None,
-    notify_on_complete: Optional[bool] = None,
-    deliver: Optional[str] = None,
     parent_agent=None,
 ) -> str:
     """
@@ -2898,19 +2896,7 @@ def delegate_task(
         return json.dumps(_cap_result, ensure_ascii=False)
 
     # ----- Synchronous path -----
-    result_str = json.dumps(_execute_and_aggregate(), ensure_ascii=False)
-
-    # Post-completion notification (notify_on_complete + gateway delivery)
-    _maybe_notify_complete(
-        parent_agent=parent_agent,
-        result_str=result_str,
-        notify_on_complete=notify_on_complete,
-        deliver=deliver,
-        goal=goal,
-        task_count=len(task_list),
-    )
-
-    return result_str
+    return json.dumps(_execute_and_aggregate(), ensure_ascii=False)
 
 
 def _resolve_child_credential_pool(
@@ -3480,24 +3466,6 @@ DELEGATE_TASK_SCHEMA = {
                     "Leave empty unless acp_command is explicitly provided."
                 ),
             },
-            "notify_on_complete": {
-                "type": "boolean",
-                "description": (
-                    "When True and the user is not actively chatting, push a summary "
-                    "of the subagent's result to the last active gateway platform "
-                    "(Telegram, Discord, etc.) as a notification. Default: False. "
-                    "Use this for tasks you expect to complete while the user is away."
-                ),
-            },
-            "deliver": {
-                "type": "string",
-                "description": (
-                    "Delivery destination for the completion notification. "
-                    "\"auto\" (default) = the session's origin platform. "
-                    "Or explicit: \"telegram:<chat_id>\", \"discord:#channel\". "
-                    "Only used when notify_on_complete=True."
-                ),
-            },
         },
         "required": [],
     },
@@ -3506,73 +3474,6 @@ DELEGATE_TASK_SCHEMA = {
 
 # --- Registry ---
 from tools.registry import registry, tool_error
-
-
-def _maybe_notify_complete(
-    parent_agent=None,
-    result_str: str = "",
-    notify_on_complete: Optional[bool] = None,
-    deliver: Optional[str] = None,
-    goal: Optional[str] = None,
-    task_count: int = 1,
-) -> None:
-    """If notify_on_complete is True, push subagent result as a gateway
-    notification when the user appears idle (no message in 5 minutes).
-
-    Runs in a daemon thread — never blocks the parent agent loop.
-    """
-    if not notify_on_complete or not parent_agent:
-        return
-    try:
-        import json
-        import threading
-
-        # Parse result to extract a summary
-        summary = ""
-        try:
-            parsed = json.loads(result_str) if isinstance(result_str, str) else {}
-            if isinstance(parsed, dict):
-                summary = parsed.get("summary") or parsed.get("note") or ""
-            elif isinstance(parsed, list) and parsed:
-                first = parsed[0]
-                if isinstance(first, dict):
-                    summary = first.get("summary", "")
-        except (json.JSONDecodeError, TypeError):
-            summary = result_str[:200] if result_str else ""
-
-        goal_short = (goal or "task")[:80]
-        msg = f"✅ Subagent finished: '{goal_short}'"
-        if summary:
-            msg += f"\n{summary[:300]}"
-
-        # Deliver in background thread — never block the parent
-        def _deliver():
-            try:
-                _do_gateway_delivery(parent_agent, msg, deliver)
-            except Exception:
-                pass
-
-        t = threading.Thread(target=_deliver, daemon=True)
-        t.start()
-    except Exception:
-        pass  # Must never block
-
-
-def _do_gateway_delivery(agent, text: str, target: Optional[str] = None) -> None:
-    """Push a message to the gateway delivery system."""
-    try:
-        from gateway.delivery import send_notification
-
-        platform = getattr(agent, "platform", None)
-        if not platform and not target:
-            return
-
-        if target and target != "auto":
-            send_notification(platform=platform, text=text, target=target)
-        elif platform:
-            send_notification(platform=platform, text=text)
-    except Exception:
-        pass
 
 
 def _model_background_value(args: dict, parent_agent=None) -> bool:
@@ -3604,8 +3505,6 @@ registry.register(
         acp_args=args.get("acp_args"),
         role=args.get("role"),
         background=_model_background_value(args, kw.get("parent_agent")),
-        notify_on_complete=args.get("notify_on_complete"),
-        deliver=args.get("deliver"),
         parent_agent=kw.get("parent_agent"),
     ),
     check_fn=check_delegate_requirements,
