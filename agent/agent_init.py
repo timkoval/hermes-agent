@@ -167,19 +167,35 @@ def _resolve_context_for_agent(agent, _agent_cfg):
     """Read HERMES_CONTEXT / HERMES_PRESET env vars, resolve context
     config overrides, and apply them to the agent.
 
+    When no env var is set and a ``contexts.default`` entry exists in
+    config, it is applied automatically so the context/preset system is
+    active by default. CLI flags (``--context`` / ``--preset``) override
+    this by setting the env vars after config is loaded.
+
     Called early in init_agent so model/credential_pool/toolsets are
     set BEFORE the main config-read blocks.
     """
     import os
     context_name = os.environ.get("HERMES_CONTEXT") or ""
     preset_name = os.environ.get("HERMES_PRESET") or ""
+
+    # Auto-apply the default context when nothing is explicitly selected.
+    # This lets config.yaml ``contexts:`` act as the single source of truth
+    # for the base runtime mode without requiring HERMES_CONTEXT in .env.
     if not context_name and not preset_name:
-        return
+        contexts = _agent_cfg.get("contexts", {}) if isinstance(_agent_cfg, dict) else {}
+        if "default" in contexts:
+            context_name = "default"
+            preset_name = contexts["default"].get("preset", "")
+        if not context_name:
+            return
 
     from agent.toolset_resolver import (
         resolve_context_config,
         resolve_preset,
     )
+
+    ctx = None
 
     # Resolve context config
     if context_name:
@@ -203,7 +219,10 @@ def _resolve_context_for_agent(agent, _agent_cfg):
             # Store active context name for system prompt
             agent._active_context = context_name
 
-    # Resolve preset to enabled_toolsets override
+    # Resolve preset to enabled_toolsets override. If the context defines a
+    # preset and no explicit preset was requested, inherit from the context.
+    if not preset_name and ctx is not None:
+        preset_name = ctx.get("preset", "")
     if preset_name:
         toolsets = resolve_preset(preset_name, _agent_cfg)
         if toolsets:
