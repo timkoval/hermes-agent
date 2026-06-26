@@ -8242,11 +8242,6 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             # Apply credential pool
             if ctx.get("credential_pool"):
                 self.agent._credential_pool = ctx["credential_pool"]
-            # Apply git identity
-            ctx_git = ctx.get("git", {})
-            if isinstance(ctx_git, dict) and ctx_git.get("name"):
-                self.agent._context_git_name = ctx_git["name"]
-                self.agent._context_git_email = ctx_git.get("email", "")
             # Apply preset from context
             ctx_preset = ctx.get("preset", "")
             if ctx_preset:

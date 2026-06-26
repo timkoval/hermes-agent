@@ -200,11 +200,6 @@ def _resolve_context_for_agent(agent, _agent_cfg):
             # Apply credential pool
             if ctx.get("credential_pool"):
                 agent._credential_pool = ctx["credential_pool"]
-            # Apply git identity (stored for system-prompt injection)
-            ctx_git = ctx.get("git", {})
-            if isinstance(ctx_git, dict) and ctx_git.get("name"):
-                agent._context_git_name = ctx_git["name"]
-                agent._context_git_email = ctx_git.get("email", "")
             # Store active context name for system prompt
             agent._active_context = context_name
 
@@ -1290,17 +1285,6 @@ def init_agent(
             )
     except Exception:
         pass  # GC must never block agent init
-
-    # File dedup cache — cross-session read deduplication
-    try:
-        from agent.dedup_cache import FileDedupCache
-        from tools.memory_tool import get_workspace_dir
-        agent._dedup_cache = FileDedupCache(
-            get_workspace_dir() / ".file_cache.db"
-        )
-        agent._dedup_cache.prune(max_entries=10000)
-    except Exception:
-        agent._dedup_cache = None
 
     # Load config once for memory, skills, and compression sections
     try:

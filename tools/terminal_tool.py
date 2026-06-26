@@ -2733,19 +2733,18 @@ def terminal_tool(
 
             # --- Error pattern check ---
             # On non-zero exit, scan stderr for known patterns stored in
-            # WORKING.md in the workspace directory.
+            # working memory (WORKING.md in the workspace directory).
             if returncode != 0 and output:
                 try:
                     from agent.error_patterns import check_error
-                    from tools.memory_tool import get_workspace_dir
-                    _working_path = get_workspace_dir() / "WORKING.md"
-                    if _working_path.exists():
-                        _raw = _working_path.read_text(encoding="utf-8")
-                        _entries = [e.strip() for e in _raw.split("\n§\n") if e.strip()]
-                        if _entries:
-                            _hint = check_error(output, _entries)
-                            if _hint:
-                                result_dict["output"] = output + _hint
+                    from tools.memory_tool import MemoryStore
+                    _store = MemoryStore()
+                    _store.load_from_disk()
+                    _entries = _store.working_entries
+                    if _entries:
+                        _hint = check_error(output, _entries)
+                        if _hint:
+                            result_dict["output"] = output + _hint
                 except Exception:
                     pass
 

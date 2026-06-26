@@ -1084,10 +1084,8 @@ DEFAULT_CONFIG = {
         #   "text"   — always pre-analyze with vision_analyze and prepend the
         #              description as text; the main model never sees pixels.
         # Affects gateway platforms, the TUI, and CLI /attach.  vision_analyze
-        # is always available as a tool independent of this setting.
-        "vision_attachment_mode": "auto",
-        # When True (default), push a gateway notification when a /goal completes.
-        "goal_notifications": True,
+        # remains available as a tool regardless of this setting — the routing
+        # only controls how inbound user images are presented.
         "image_input_mode": "auto",
         "disabled_toolsets": [],
     },
@@ -2107,6 +2105,7 @@ DEFAULT_CONFIG = {
         "temp_dir": "temp",                          # Subdirectory for disposable files
         "temp_max_age_hours": 48,                    # Auto-clean temp files older than this (0 = disabled)
         "temp_max_size_mb": 500,                     # Cap total temp dir size (0 = disabled)
+        "cleanup_on_startup": True,                  # Run temp GC at session start
     },
 
     # Subagent delegation — override the provider:model used by delegate_task
