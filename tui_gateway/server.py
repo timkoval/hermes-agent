@@ -4446,6 +4446,23 @@ def _make_agent(
     _preset_name = (os.environ.get("HERMES_PRESET") or "").strip()
     agent._active_context = _ctx_name or "default"
     agent._active_preset = _preset_name or ""
+
+    # Also set _context_model_default and related fields so /model
+    # fallback and introspection work correctly (mirrors
+    # agent_init._resolve_context_for_agent).
+    if _ctx_name:
+        try:
+            from agent.toolset_resolver import resolve_context_config
+
+            _ctx = resolve_context_config(_ctx_name, cfg)
+            if _ctx is not None:
+                _ctx_model = _ctx.get("model", {})
+                if isinstance(_ctx_model, dict) and _ctx_model.get("default"):
+                    agent._context_model_default = _ctx_model["default"]
+                    agent._context_provider_default = _ctx_model.get("provider")
+                    agent._context_credential_pool = _ctx_model.get("credential_pool")
+        except Exception:
+            pass  # Non-critical — model is already resolved by _resolve_startup_runtime()
     return agent
 
 

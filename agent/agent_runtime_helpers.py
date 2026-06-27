@@ -2168,6 +2168,11 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 ),
                 next_args,
             )
+    elif function_name == "agent_profile":
+        def _execute(next_args: dict) -> Any:
+            from tools.agent_profile import agent_profile as _agent_profile
+
+            return _agent_profile(agent=agent, store=agent._memory_store)
     elif function_name == "delegate_task":
         def _execute(next_args: dict) -> Any:
             return _finish_agent_tool(agent._dispatch_delegate_task(next_args), next_args)
