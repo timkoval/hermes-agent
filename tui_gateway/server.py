@@ -4389,7 +4389,7 @@ def _make_agent(
             "target_model": model or None,
         })
     _pr = _load_provider_routing()
-    return AIAgent(
+    agent = AIAgent(
         model=model,
         max_iterations=_cfg_max_turns(cfg, 90),
         provider=runtime.get("provider"),
@@ -4436,6 +4436,17 @@ def _make_agent(
         fallback_model=_load_fallback_model(),
         **_agent_cbs(sid),
     )
+
+    # Mirror _resolve_context_for_agent from agent_init.py — set the active
+    # context and preset from env vars so agent_profile, the system prompt,
+    # and other introspection paths report the right context.
+    # _resolve_startup_runtime() above already resolved the model from these
+    # same env vars, but never wrote _active_context on the agent object.
+    _ctx_name = (os.environ.get("HERMES_CONTEXT") or "").strip()
+    _preset_name = (os.environ.get("HERMES_PRESET") or "").strip()
+    agent._active_context = _ctx_name or "default"
+    agent._active_preset = _preset_name or ""
+    return agent
 
 
 def _init_session(
